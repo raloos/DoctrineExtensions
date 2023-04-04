@@ -10,6 +10,7 @@
 namespace Gedmo\Translatable\Entity\Repository;
 
 use Doctrine\DBAL\Types\Type;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -136,6 +137,8 @@ class TranslationRepository extends EntityRepository
             $translationMeta = $this->getClassMetadata(); // table inheritance support
 
             $translationClass = $config['translationClass'] ?? $translationMeta->rootEntityName;
+            
+            $entityId = $this->foreignKey($entityId, $translationClass);
 
             $qb = $this->_em->createQueryBuilder();
             $qb->select('trans.content, trans.field, trans.locale')
@@ -213,7 +216,7 @@ class TranslationRepository extends EntityRepository
                 ->orderBy('trans.locale');
             $q = $qb->getQuery();
             $data = $q->execute(
-                ['entityId' => $id],
+                ['entityId' => $this->foreignKey($id, $translationMeta->rootEntityName)],
                 Query::HYDRATE_ARRAY
             );
 
@@ -245,5 +248,29 @@ class TranslationRepository extends EntityRepository
         }
 
         return $this->listener;
+    }
+    
+    /**
+     * Transforms foreing key of translation to appropriate PHP value
+     * to prevent database level cast
+     *
+     * @param mixed  $key       foreign key value
+     * @param string $className translation class name
+     * @phpstan-param class-string $className translation class name
+     *
+     * @return int|string transformed foreign key
+     */
+    private function foreignKey($key, string $className)
+    {
+        $meta = $this->_em->getClassMetadata($className);
+        $type = Type::getType($meta->getTypeOfField('foreignKey'));
+        switch ($type->getName()) {
+            case Types::BIGINT:
+            case Types::INTEGER:
+            case Types::SMALLINT:
+                return (int) $key;
+            default:
+                return (string) $key;
+        }
     }
 }
